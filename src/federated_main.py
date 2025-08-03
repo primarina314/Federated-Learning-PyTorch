@@ -29,8 +29,8 @@ if __name__ == '__main__':
     args = args_parser()
     exp_details(args)
 
-    if args.gpu_id:
-        torch.cuda.set_device(args.gpu_id)
+    if args.gpu:
+        torch.cuda.set_device(args.gpu)
     device = 'cuda' if args.gpu else 'cpu'
 
     # load dataset and user groups
@@ -72,11 +72,27 @@ if __name__ == '__main__':
     print_every = 2
     val_loss_pre, counter = 0, 0
 
+    """
+    TODO: Hyperparams
+    Power constraints
+    Channel model
+    
+    """
+
     for epoch in tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
         print(f'\n | Global Training Round : {epoch+1} |\n')
 
         global_model.train()
+        """
+        TODO: Sampling
+        아래는 중앙 서버에서 update 에 참여할 user 를 샘플링하는 방식(Centralized Sampling)
+        Decentralized sampling 으로 수정해야 함
+
+        TODO: Power constraint, channel
+        채널 상태 반영, unbiased - gamma 설정
+        probability 설정
+        """
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
@@ -85,6 +101,13 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
             w, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
+            """
+            TODO: Aggregation
+            지금은 OTA 환경으로 설정되지 않았고, 각 usr 가 weight 를 직접 보냄. GM 적용도 없음.
+            1. weight 가 아니라 grad + noise 에 a_k 곱해서 보내도록 설정
+            2. OTA 가정해서 channel gain 및 LC.
+            3. AWGN 추가
+            """
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
