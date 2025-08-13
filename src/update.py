@@ -5,7 +5,9 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-
+from collections import OrderedDict
+import copy
+from torch.func import functional_call, vmap, grad
 
 class DatasetSplit(Dataset):
     """An abstract Dataset class wrapped around Pytorch Dataset class.
@@ -32,6 +34,8 @@ class LocalUpdate(object):
         self.device = 'cuda' if args.gpu else 'cpu'
         # Default criterion set to NLL loss function
         self.criterion = nn.NLLLoss().to(self.device)
+        self.model_defference = OrderedDict()
+        self.prob = .5
 
     def train_val_test(self, dataset, idxs):
         """
@@ -51,7 +55,40 @@ class LocalUpdate(object):
                                 batch_size=int(len(idxs_test)/10), shuffle=False)
         return trainloader, validloader, testloader
 
-    def update_weights(self, model, global_round):
+    def calc_grad(self, model:nn.Module, ):
+        def compute_loss_stateless(params, buffers, image, label):
+            # functional_call을 사용하여 상태 비저장 방식으로 모델 실행
+            # image와 label은 배치 차원이 없는 단일 샘플 (예: ,)
+            batch = image.unsqueeze(0)
+            targets = label.unsqueeze(0)
+            
+            output = functional_call(model, (params, buffers), (batch,))
+            loss = nn.CrossEntropyLoss()(output, targets)
+            return loss
+        
+        compute_grad_stateless = grad(compute_loss_stateless, argnums=0)
+        params = copy.deepcopy(model.named_parameters())
+        buffers = copy.deepcopy(model.named_buffers())
+
+        per_sample_grads = vmap(compute_grad_stateless, in_dims=(None, None, 0, 0))(params, buffers, images, labels)
+        pass
+    
+
+    def update_weights(self, model:nn.Module, global_round:int):
+        def compute_loss_stateless(params, buffers, image, label):
+            # functional_call을 사용하여 상태 비저장 방식으로 모델 실행
+            # image와 label은 배치 차원이 없는 단일 샘플 (예: ,)
+            batch = image.unsqueeze(0)
+            targets = label.unsqueeze(0)
+            
+            output = functional_call(model, (params, buffers), (batch,))
+            # loss = nn.CrossEntropyLoss()(output, targets)
+            loss = nn.NLLLoss()(output, targets)
+            return loss
+        
+        initial = copy.deepcopy(model)
+        # model.named_parameters()
+
         # Set mode to train model
         model.train()
         epoch_loss = []
@@ -66,10 +103,19 @@ class LocalUpdate(object):
 
         for iter in range(self.args.local_ep):
             batch_loss = []
+            # TODO: 각 레이블마다 grad 혹은 diff
+
+            # batch 처리
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 model.zero_grad()
+                params = {name: p for name, p in model.named_parameters()}
+                buffers = {name: b for name, b in model.named_buffers()}
+
+                compute_grad_stateless = grad(compute_loss_stateless, argnums=0)
+                per_sample_grads = vmap(compute_grad_stateless, in_dims=(None, None, 0, 0))(params, buffers, images, labels)
+
                 log_probs = model(images)
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
@@ -84,6 +130,9 @@ class LocalUpdate(object):
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
+        for name in model.state_dict():
+            # might need to quantization
+            self.model_defference[name] = (model.state_dict()[name] - initial.state_dict()[name]) / self.args.lr
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
     def inference(self, model):
