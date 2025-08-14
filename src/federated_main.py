@@ -95,10 +95,50 @@ if __name__ == '__main__':
         """
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
+        users_trace = np.zeros(shape=(args.num_users))
+        users_prob = np.zeros(shape=(args.num_users))
+        
+
+        for idx in range(args.num_users):
+            local_model = LocalUpdate(args=args, dataset=train_dataset,
+                                      idxs=user_groups[idx], logger=logger)
+            users_trace[idx] = local_model.get_trace(global_model)
+        max_trace = users_trace.max()
+        mean_trace = users_trace.mean()
+
+        for idx in range(args.num_users):
+            # decentralized user-sampling
+            local_model = LocalUpdate(args=args, dataset=train_dataset,
+                                      idxs=user_groups[idx], logger=logger)
+            p = users_trace[idx] / max_trace / 5
+            if np.random.random() > p:
+                continue
+            # TODO: difference 신호 선형결합 저장 -> mu 로 나눠서 step 이동
+            w, loss = local_model.update_weights(
+                model=copy.deepcopy(global_model), global_round=epoch)
+            local_weights.append(copy.deepcopy(w))
+            local_losses.append(copy.deepcopy(loss))
+
 
         for idx in idxs_users:
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
+            
+            """
+            TODO: 다른 상황과 비교
+            1. 평균 참여확률 동일하게 맞춘 상태에서 균일 참여 확률 - 같은 mu, 같은 power consumption
+            2. 레이블 분포에 의한 확률 결정 방식과 비교
+            3. 
+            * mean 을 바탕으로 PS 가 threshold 설정
+            ** C 값까지 고려한 확률분배 및 스텝 이동 또는 idx_users 에 append. 후자가 나아 보임
+            """
+
+            # 모든 usr trace 계산 추가에 의한 소요 시간 차이: 126.4048 -> 134.6846
+            """
+            TODO: LDP 상황 적용
+            w(tensor), loss 가 아니라, diff(tensor) 를 리턴
+            """
+
             w, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
             """
@@ -110,6 +150,7 @@ if __name__ == '__main__':
             """
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
+
 
         # update global weights
         global_weights = average_weights(local_weights)
@@ -144,9 +185,14 @@ if __name__ == '__main__':
     print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
 
+
+    from datetime import datetime
+    now = datetime.now()
+    current_time_str = now.strftime("%Y-%m-%d %H%M%S")
+
     # Saving the objects train_loss and train_accuracy:
-    file_name = './save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        format(args.dataset, args.model, args.epochs, args.frac, args.iid,
+    file_name = './save/objects/[{}]_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
+        format(current_time_str, args.dataset, args.model, args.epochs, args.frac, args.iid,
                args.local_ep, args.local_bs)
 
     with open(file_name, 'wb') as f:
@@ -165,8 +211,8 @@ if __name__ == '__main__':
     plt.plot(range(len(train_loss)), train_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
+                format(current_time_str, args.dataset, args.model, args.epochs, args.frac,
                        args.iid, args.local_ep, args.local_bs))
     
     # Plot Average Accuracy vs Communication rounds
@@ -175,6 +221,6 @@ if __name__ == '__main__':
     plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
-                format(args.dataset, args.model, args.epochs, args.frac,
+    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
+                format(current_time_str, args.dataset, args.model, args.epochs, args.frac,
                        args.iid, args.local_ep, args.local_bs))

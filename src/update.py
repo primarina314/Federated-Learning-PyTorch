@@ -114,6 +114,8 @@ class LocalUpdate(object):
             
             return trace_of_covariance
     
+    def set_prob(self, prob):
+        self.prob = prob
 
     def update_weights(self, model:nn.Module, global_round:int):
 
