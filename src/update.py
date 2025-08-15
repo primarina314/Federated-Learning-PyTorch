@@ -197,7 +197,7 @@ class LocalUpdate(object):
         for name in model.state_dict():
             model_difference[name] = model.state_dict()[name] - initial.state_dict()[name]
         
-        # print('participated')
+        print('participated')
         return model_difference, sum(epoch_loss) / len(epoch_loss)
 
     def inference(self, model):

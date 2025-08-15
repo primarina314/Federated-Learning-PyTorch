@@ -65,7 +65,7 @@ class CNNFashion_Mnist(nn.Module):
         out = self.fc(out)
         return out
 
-
+# TODO: 모델 구조를 바꿀 필요가 있어보임. 
 class CNNCifar(nn.Module):
     def __init__(self, args):
         super(CNNCifar, self).__init__()
