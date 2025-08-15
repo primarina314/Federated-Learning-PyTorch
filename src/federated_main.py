@@ -69,7 +69,7 @@ if __name__ == '__main__':
     train_loss, train_accuracy = [], []
     val_acc_list, net_list = [], []
     cv_loss, cv_acc = [], []
-    print_every = 2
+    print_every = 1
     val_loss_pre, counter = 0, 0
 
     for epoch in tqdm(range(args.epochs)):
