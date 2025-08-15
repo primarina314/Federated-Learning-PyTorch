@@ -127,7 +127,8 @@ if __name__ == '__main__':
 
         # update global weights
         global_weights = OrderedDict()
-        mu = users_prob.mean() * len(users_prob)
+        # mu = users_prob.mean() * len(users_prob)
+        mu = users_prob.sum()
         for key in weight_difference_dict.keys():
             global_weights[key] = global_model.state_dict()[key] + weight_difference_dict[key] / mu
 
