@@ -1,0 +1,24 @@
+"""
+TODO: 다른 상황과 비교
+1. 평균 참여확률 동일하게 맞춘 상태에서 균일 참여 확률 - 같은 mu, 같은 power consumption
+2. 레이블 분포에 의한 확률 결정 방식과 비교
+3. 
+* mean 을 바탕으로 PS 가 threshold 설정
+** C 값까지 고려한 확률분배 및 스텝 이동 또는 idx_users 에 append. 후자가 나아 보임
+"""
+
+# 모든 usr trace 계산 추가에 의한 소요 시간 차이: 126.4048 -> 134.6846
+"""
+TODO: LDP 상황 적용
+w(tensor), loss 가 아니라, diff(tensor) 를 리턴
+"""
+
+"""
+TODO: Aggregation
+지금은 OTA 환경으로 설정되지 않았고, 각 usr 가 weight 를 직접 보냄. GM 적용도 없음.
+1. weight 가 아니라 grad + noise 에 a_k 곱해서 보내도록 설정
+2. OTA 가정해서 channel gain 및 LC.
+3. AWGN 추가
+"""
+
+

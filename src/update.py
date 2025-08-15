@@ -141,21 +141,63 @@ class LocalUpdate(object):
 
                 log_probs = model(images)
                 loss = self.criterion(log_probs, labels)
-                loss_cov = self.criterion_cov(log_probs, labels)
                 
                 loss.backward()
                 optimizer.step()
 
-                # if self.args.verbose and (batch_idx % 10 == 0):
-                #     print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                #         global_round, iter, batch_idx * len(images),
-                #         len(self.trainloader.dataset),
-                #         100. * batch_idx / len(self.trainloader), loss.item()))
+                if self.args.verbose and (batch_idx % 10 == 0):
+                    print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        global_round, iter, batch_idx * len(images),
+                        len(self.trainloader.dataset),
+                        100. * batch_idx / len(self.trainloader), loss.item()))
                 self.logger.add_scalar('loss', loss.item())
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+    
+    def update_steps(self, model:nn.Module):
+        if np.random.random() > self.prob:
+            return None, None
+        
+        initial = copy.deepcopy(model)
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.5)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+
+        for iter in range(self.args.local_ep):
+            batch_loss = []
+            # batch 처리
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                model.zero_grad()
+
+                log_probs = model(images)
+                loss = self.criterion(log_probs, labels)
+                
+                loss.backward()
+                optimizer.step()
+
+                self.logger.add_scalar('loss', loss.item())
+                batch_loss.append(loss.item())
+            epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
+        model_difference = OrderedDict()
+        for name in model.state_dict():
+            model_difference[name] = model.state_dict()[name] - initial.state_dict()[name]
+        
+        print('participated')
+        return model_difference, sum(epoch_loss) / len(epoch_loss)
 
     def inference(self, model):
         """ Returns the inference accuracy and loss.

@@ -18,6 +18,7 @@ from update import LocalUpdate, test_inference
 from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
 from utils import get_dataset, average_weights, exp_details
 import copy
+from collections import OrderedDict
 
 if __name__ == '__main__':
     start_time = time.time()
@@ -79,6 +80,8 @@ if __name__ == '__main__':
     
     """
 
+    # 서버, 로컬 클래스를 새로 만드는게 나을수도
+
     for epoch in tqdm(range(args.epochs)):
         local_weights, local_losses = [], []
         print(f'\n | Global Training Round : {epoch+1} |\n')
@@ -97,7 +100,6 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         users_trace = np.zeros(shape=(args.num_users))
         users_prob = np.zeros(shape=(args.num_users))
-        
 
         for idx in range(args.num_users):
             local_model = LocalUpdate(args=args, dataset=train_dataset,
@@ -106,60 +108,43 @@ if __name__ == '__main__':
         max_trace = users_trace.max()
         mean_trace = users_trace.mean()
 
+        weight_difference_dict = OrderedDict()
+        
         for idx in range(args.num_users):
             # decentralized user-sampling
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
+
             p = users_trace[idx] / max_trace / 5
-            if np.random.random() > p:
+            # p = mean_trace / max_trace / 5
+            print(f'prob: {p}')
+            users_prob[idx] = p
+            local_model.set_prob(p)
+            local_difference, loss = local_model.update_steps(
+                model=copy.deepcopy(global_model)
+            )
+
+            if local_difference is None:
                 continue
-            # TODO: difference 신호 선형결합 저장 -> mu 로 나눠서 step 이동
-            w, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model), global_round=epoch)
-            local_weights.append(copy.deepcopy(w))
+            # LC of local diff signals
+            for key in local_difference.keys():
+                if key in weight_difference_dict:
+                    weight_difference_dict[key] += local_difference[key]
+                else:
+                    weight_difference_dict[key] = local_difference[key]
             local_losses.append(copy.deepcopy(loss))
-
-
-        for idx in idxs_users:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-            
-            """
-            TODO: 다른 상황과 비교
-            1. 평균 참여확률 동일하게 맞춘 상태에서 균일 참여 확률 - 같은 mu, 같은 power consumption
-            2. 레이블 분포에 의한 확률 결정 방식과 비교
-            3. 
-            * mean 을 바탕으로 PS 가 threshold 설정
-            ** C 값까지 고려한 확률분배 및 스텝 이동 또는 idx_users 에 append. 후자가 나아 보임
-            """
-
-            # 모든 usr trace 계산 추가에 의한 소요 시간 차이: 126.4048 -> 134.6846
-            """
-            TODO: LDP 상황 적용
-            w(tensor), loss 가 아니라, diff(tensor) 를 리턴
-            """
-
-            w, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model), global_round=epoch)
-            """
-            TODO: Aggregation
-            지금은 OTA 환경으로 설정되지 않았고, 각 usr 가 weight 를 직접 보냄. GM 적용도 없음.
-            1. weight 가 아니라 grad + noise 에 a_k 곱해서 보내도록 설정
-            2. OTA 가정해서 channel gain 및 LC.
-            3. AWGN 추가
-            """
-            local_weights.append(copy.deepcopy(w))
-            local_losses.append(copy.deepcopy(loss))
-
 
         # update global weights
-        global_weights = average_weights(local_weights)
+        global_weights = OrderedDict()
+        mu = users_prob.mean() * len(users_prob)
+        for key in weight_difference_dict.keys():
+            global_weights[key] = global_model.state_dict()[key] + weight_difference_dict[key] / mu
 
         # update global weights
         global_model.load_state_dict(global_weights)
 
         loss_avg = sum(local_losses) / len(local_losses)
-        train_loss.append(loss_avg)
+        train_loss.append(loss_avg) # 이번 iter 에 참여한 usr 들의 평균 train loss
 
         # Calculate avg training accuracy over all users at every epoch
         list_acc, list_loss = [], []
