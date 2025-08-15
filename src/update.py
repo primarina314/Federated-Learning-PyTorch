@@ -72,6 +72,7 @@ class LocalUpdate(object):
 
         images_cov, labels_cov = images_cov.to(self.device), labels_cov.to(self.device)
         model.zero_grad()
+        model.eval()
 
         if self.device == 'cuda':
             params = {k: v.detach() for k, v in model.named_parameters()}
