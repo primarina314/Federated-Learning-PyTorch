@@ -60,5 +60,8 @@ def args_parser():
                         help='rounds of early stopping')
     parser.add_argument('--verbose', type=int, default=1, help='verbose')
     parser.add_argument('--seed', type=int, default=1, help='random seed')
+
+    parser.add_argument('--var_aware', type=int, default=0, help="set to 1 for grad's VAR based participating probability. Set to 0 for uniform probs.")
+
     args = parser.parse_args()
     return args

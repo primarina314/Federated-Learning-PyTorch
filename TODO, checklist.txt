@@ -22,3 +22,20 @@ TODO: Aggregation
 """
 
 
+"""
+TODO: Sampling
+아래는 중앙 서버에서 update 에 참여할 user 를 샘플링하는 방식(Centralized Sampling)
+Decentralized sampling 으로 수정해야 함
+
+TODO: Power constraint, channel
+채널 상태 반영, unbiased - gamma 설정
+probability 설정
+"""
+
+"""
+TODO: Hyperparams
+Power constraints
+Channel model
+
+"""
+

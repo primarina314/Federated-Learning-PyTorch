@@ -73,12 +73,8 @@ if __name__ == '__main__':
     print_every = 2
     val_loss_pre, counter = 0, 0
 
-    """
-    TODO: Hyperparams
-    Power constraints
-    Channel model
-    
-    """
+    # test acc 추가
+    test_accuracy = []
 
     # 서버, 로컬 클래스를 새로 만드는게 나을수도
 
@@ -87,15 +83,7 @@ if __name__ == '__main__':
         print(f'\n | Global Training Round : {epoch+1} |\n')
 
         global_model.train()
-        """
-        TODO: Sampling
-        아래는 중앙 서버에서 update 에 참여할 user 를 샘플링하는 방식(Centralized Sampling)
-        Decentralized sampling 으로 수정해야 함
-
-        TODO: Power constraint, channel
-        채널 상태 반영, unbiased - gamma 설정
-        probability 설정
-        """
+        
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         users_trace = np.zeros(shape=(args.num_users))
@@ -115,9 +103,12 @@ if __name__ == '__main__':
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
 
-            p = users_trace[idx] / max_trace / 5
-            # p = mean_trace / max_trace / 5
-            print(f'prob: {p}')
+            if args.var_aware == 1:
+                p = users_trace[idx] / max_trace / 2 # trace-aware prob
+            else:
+                p = mean_trace / max_trace / 2 # uniform prob
+            
+            # print(f'prob: {p}')
             users_prob[idx] = p
             local_model.set_prob(p)
             local_difference, loss = local_model.update_steps(
@@ -149,22 +140,29 @@ if __name__ == '__main__':
         # Calculate avg training accuracy over all users at every epoch
         list_acc, list_loss = [], []
         global_model.eval()
-        for c in range(args.num_users):
+        for idx in range(args.num_users):
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
             acc, loss = local_model.inference(model=global_model)
             list_acc.append(acc)
             list_loss.append(loss)
-        train_accuracy.append(sum(list_acc)/len(list_acc))
+        train_accuracy.append(sum(list_acc)/len(list_acc)) # 모든 유저의 개별 testset 에 대한 평균 accuracy
+
+
+        # test acc 추가
+        test_acc, test_loss = test_inference(args, global_model, test_dataset) # 글로벌/중앙서버가 가진 별도의 testset 에 대한 acc 및 loss
+        test_accuracy.append(test_acc)
 
         # print global training loss after every 'i' rounds
         if (epoch+1) % print_every == 0:
             print(f' \nAvg Training Stats after {epoch+1} global rounds:')
             print(f'Training Loss : {np.mean(np.array(train_loss))}')
             print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracy[-1]))
+            print('Test Accuracy: {:.2f}% \n'.format(100*test_accuracy[-1]))
 
+    # 매 epoch 마다 test_inference 후에 그래프 그리는게 좋아보임
     # Test inference after completion of training
-    test_acc, test_loss = test_inference(args, global_model, test_dataset)
+    test_acc, test_loss = test_inference(args, global_model, test_dataset) # 글로벌/중앙서버가 가진 별도의 testset 에 대한 acc 및 loss
 
     print(f' \n Results after {args.epochs} global rounds of training:')
     print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
@@ -176,12 +174,12 @@ if __name__ == '__main__':
     current_time_str = now.strftime("%Y-%m-%d %H%M%S")
 
     # Saving the objects train_loss and train_accuracy:
-    file_name = './save/objects/[{}]_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
+    file_name = './save/objects/[{}]_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_V[{}].pkl'.\
         format(current_time_str, args.dataset, args.model, args.epochs, args.frac, args.iid,
-               args.local_ep, args.local_bs)
+               args.local_ep, args.local_bs, args.var_aware)
 
     with open(file_name, 'wb') as f:
-        pickle.dump([train_loss, train_accuracy], f)
+        pickle.dump([train_loss, train_accuracy, test_accuracy], f)
 
     print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
 
@@ -196,16 +194,27 @@ if __name__ == '__main__':
     plt.plot(range(len(train_loss)), train_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
+    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_V[{}]_loss.png'.
                 format(current_time_str, args.dataset, args.model, args.epochs, args.frac,
-                       args.iid, args.local_ep, args.local_bs))
+                       args.iid, args.local_ep, args.local_bs, args.var_aware))
     
     # Plot Average Accuracy vs Communication rounds
     plt.figure()
-    plt.title('Average Accuracy vs Communication rounds')
+    plt.title('Average Training Accuracy vs Communication rounds')
     plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
+    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_V[{}]_train_acc.png'.
                 format(current_time_str, args.dataset, args.model, args.epochs, args.frac,
-                       args.iid, args.local_ep, args.local_bs))
+                       args.iid, args.local_ep, args.local_bs, args.var_aware))
+    
+    plt.figure()
+    plt.title('Test Accuracy vs Communication rounds')
+    plt.plot(range(len(test_accuracy)), test_accuracy, color='k')
+    plt.ylabel('Test Accuracy')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/[{}]_fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_V[{}]_test_acc.png'.
+                format(current_time_str, args.dataset, args.model, args.epochs, args.frac,
+                       args.iid, args.local_ep, args.local_bs, args.var_aware))
+
+
